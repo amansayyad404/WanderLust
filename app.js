@@ -6,6 +6,11 @@ const path=require("path");
 const port=8080;
 const methodOverride=require("method-override");
 const ejsMate=require("ejs-mate");//used to create template like setting same template for every page
+//err handling imports
+const wrapAsync=require("./utils/wrapAsync.js")
+const ExpressError=require("./utils/ExpressError.js");
+const {listingSchema} =require("./schema.js");
+
 
 app.set("view engine","ejs");
 app.set("views",path.join(__dirname,"views"));
@@ -37,11 +42,22 @@ app.get("/",(req,res)=>{
     res.send("hii this is root");
 })
 
+const validateListing =(req,res,next)=>{
+    let {error}=listingSchema.validate(req.body);
+    
+    if(error){
+        throw new ExpressError(400,error);
+    }else{
+        next();
+    }
 
-app.get("/listings",async (req,res)=>{
+}
+
+//index rout
+app.get("/listings",wrapAsync(async (req,res)=>{
    const allListings=await Listing.find({});
     res.render("./listings/index.ejs",{allListings});
-});
+}));
 
 //new rout
 app.get("/listings/new",(req,res)=>{
@@ -50,39 +66,55 @@ app.get("/listings/new",(req,res)=>{
 
 //show rout
 
-app.get("/listings/:id",async (req,res)=>{
+app.get("/listings/:id",wrapAsync(async (req,res)=>{
     let {id}= req.params;
     const listing=await Listing.findById(id);
 
     res.render("listings/show.ejs",{listing});
-})
+}));
 
 //create rout
-app.post("/listings",async (req,res)=>{
+app.post("/listings",validateListing,wrapAsync(async (req,res,next)=>{  //we are using middleware
     const newListing=new Listing(req.body.listing);
-    await newListing.save();
-    res.redirect("/listings")
-})
+        await newListing.save();
+        res.redirect("/listings")
+    
+   
+}));
 
 //edit rout
-app.get("/listings/:id/edit", async (req,res)=>{
+app.get("/listings/:id/edit", wrapAsync(async (req,res)=>{
     let {id}= req.params;
     const listing=await Listing.findById(id);
     res.render("listings/edit.ejs",{listing})
-})
+}));
 
 //update rout
-
-app.put("/listings/:id",async (req,res)=>{
+app.put("/listings/:id",validateListing,wrapAsync(async (req,res)=>{
     let {id}= req.params;
     await Listing.findByIdAndUpdate(id,{...req.body.listing})
     res.redirect(`/listings/${id}`);
-})
+}));
 
 //delete rout
-app.delete("/listings/:id", async(req,res)=>{
+app.delete("/listings/:id", wrapAsync(async(req,res)=>{
     let {id}= req.params;
     let deletedListing=await Listing.findByIdAndDelete(id);
     console.log(deletedListing);
     res.redirect("/listings")
+}));
+
+
+// if req dont match to any path then 
+app.all("*",(req,res,next)=>{
+    next(new ExpressError(404,"Page Not Found!"))
+})
+
+
+
+//error handling 
+app.use((err,req,res,next)=>{
+    let{statusCode=500,message="Something went wrong"}=err;    //{}  ->this means we are deconstructing err /500 means err at server and 400 means at client
+    //res.status(statusCode).send(message); status code means what is status and msg means what msg to show
+    res.status(statusCode).render("error.ejs",{message});
 })
