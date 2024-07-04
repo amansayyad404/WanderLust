@@ -9,7 +9,9 @@ const ejsMate=require("ejs-mate");//used to create template like setting same te
 //err handling imports
 const wrapAsync=require("./utils/wrapAsync.js")
 const ExpressError=require("./utils/ExpressError.js");
-const {listingSchema} =require("./schema.js");
+const {listingSchema,reviewSchema} =require("./schema.js");
+const Review=require("./models/review.js");
+const review = require("./models/review.js");
 
 
 app.set("view engine","ejs");
@@ -25,7 +27,6 @@ app.listen(port,()=>{
 
 
 // ****database****
-
 const MONGO_URL="mongodb://127.0.0.1:27017/wanderlust";
 
 main().then(()=>{
@@ -53,6 +54,17 @@ const validateListing =(req,res,next)=>{
 
 }
 
+const validateReview =(req,res,next)=>{
+    let {error}=reviewSchema.validate(req.body);
+    
+    if(error){
+        throw new ExpressError(400,error);
+    }else{
+        next();
+    }
+
+}
+
 //index rout
 app.get("/listings",wrapAsync(async (req,res)=>{
    const allListings=await Listing.find({});
@@ -68,7 +80,7 @@ app.get("/listings/new",(req,res)=>{
 
 app.get("/listings/:id",wrapAsync(async (req,res)=>{
     let {id}= req.params;
-    const listing=await Listing.findById(id);
+    const listing=await Listing.findById(id).populate("reviews")
 
     res.render("listings/show.ejs",{listing});
 }));
@@ -103,6 +115,30 @@ app.delete("/listings/:id", wrapAsync(async(req,res)=>{
     console.log(deletedListing);
     res.redirect("/listings")
 }));
+
+
+// reviews 
+//post review rout
+
+app.post("/listings/:id/reviews",validateReview, wrapAsync(async(req,res)=>{ //we use async because its opearion will be affect db
+    let listing= await Listing.findById(req.params.id)
+    let newReview =new Review(req.body.review);
+
+    listing.reviews.push(newReview);
+    await newReview.save()
+    await listing.save();
+    res.redirect(`/listings/${listing._id}`)
+}));
+
+//delete review rout
+app.delete("/listings/:id/reviews/:reviewId",wrapAsync(async(req,res)=>{
+    let {id,reviewId}= req.params;
+    await Listing.findByIdAndUpdate(id, {$pull: {reviews: reviewId}});
+    await Review.findByIdAndDelete(reviewId);
+
+    res.redirect(`/listings/${id}`);
+}))
+
 
 
 // if req dont match to any path then 
